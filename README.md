@@ -5,7 +5,7 @@
 **Конвертер файлов проекта в промпт для LLM**
 
 [![Live Demo](https://img.shields.io/badge/Demo-Открыть_Онлайн-2ea44f?style=for-the-badge&logo=github)](https://rytp-tv.github.io/Codembo)
-[![Stack](https://img.shields.io/badge/Tech-HTML5_%2B_JS-f7df1e?style=for-the-badge&logo=javascript&logoColor=black)](TECNOLOGY)
+[![Stack](https://img.shields.io/badge/Tech-HTML5_%2B_JS-f7df1e?style=for-the-badge&logo=javascript&logoColor=black)](#)
 ![Bitbucket open issues](https://shields.fly.dev/bitbucket/issues/rytp-tv/Codembo?label=%D0%97%D0%90%D0%9F%D0%A0%D0%9E%D0%A1%D0%AB&style=for-the-badge)
 
 </div>
