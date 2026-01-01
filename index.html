@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codembo - Конвертер файлов проекта в промпт</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        .drop-zone.dragover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+        .file-card {
+            transition: all 0.2s ease;
+        }
+        .file-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .copy-toast {
+            animation: fadeInOut 2s ease-in-out;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(10px); }
+            15% { opacity: 1; transform: translateY(0); }
+            85% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
+        }
+        .preview-container {
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        .preview-container .file-block {
+            margin-bottom: 1.5rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .preview-container .file-header {
+            background: #f3f4f6;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .preview-container .file-comment {
+            background: #fef3c7;
+            padding: 0.5rem 1rem;
+            font-style: italic;
+            color: #92400e;
+            border-bottom: 1px solid #fcd34d;
+        }
+        .preview-container .code-block {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 1rem;
+            overflow-x: auto;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        .preview-container .code-wrapper {
+            background: #374151;
+            color: #9ca3af;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+        .preview-container .separator {
+            text-align: center;
+            color: #9ca3af;
+            padding: 0.5rem;
+            font-size: 0.875rem;
+        }
+        .tree-output {
+            font-family: 'Fira Code', 'Consolas', monospace;
+            white-space: pre;
+            line-height: 1.4;
+        }
+        .tab-active {
+            background: #3b82f6;
+            color: white;
+        }
+        .tab-inactive {
+            background: #e5e7eb;
+            color: #374151;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- заголовок -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">📄 Codembo</h1>
+            <p class="text-gray-600">Преобразуйте файлы исходного кода в текст для промптов</p>
+        </header>
+
+        <div class="grid lg:grid-cols-2 gap-6">
+            <div class="space-y-6">
+                <!-- дроп -->
+                <div id="dropZone" class="drop-zone border-3 border-dashed border-gray-300 rounded-xl p-8 text-center bg-white cursor-pointer hover:border-blue-400 transition-colors">
+                    <div class="text-6xl mb-4">📁</div>
+                    <p class="text-xl font-medium text-gray-700 mb-2">Перетащите файлы или папки сюда</p>
+                    <p class="text-gray-500 mb-4">или</p>
+                    <div class="flex justify-center gap-3 flex-wrap">
+                        <label class="inline-block bg-blue-500 hover:bg-blue-600 text-white px-5 py-2.5 rounded-lg cursor-pointer transition-colors text-sm">
+                            📄 Выбрать файлы
+                            <input type="file" id="fileInput" multiple class="hidden">
+                        </label>
+                        <label class="inline-block bg-purple-500 hover:bg-purple-600 text-white px-5 py-2.5 rounded-lg cursor-pointer transition-colors text-sm">
+                            📂 Выбрать папку
+                            <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden">
+                        </label>
+                    </div>
+                    <p class="text-sm text-gray-400 mt-4">⚠️ Только текстовые файлы (не бинарные)</p>
+                </div>
+
+                <div class="bg-white rounded-xl p-6 shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-800">🌳 Структура файлов</h2>
+                        <button id="toggleTreeSection" class="text-blue-500 hover:text-blue-700 text-sm">
+                            Развернуть ▼
+                        </button>
+                    </div>
+                    <div id="treeSection" class="hidden space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Макс. глубина:</label>
+                                <input type="number" id="treeDepth" value="5" min="1" max="20" class="w-full p-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Формат дерева:</label>
+                                <select id="treeFormat" class="w-full p-2 border border-gray-300 rounded-lg">
+                                    <option value="ascii">ASCII (├── └──)</option>
+                                    <option value="unicode">Unicode (┣━━ ┗━━)</option>
+                                    <option value="indent">Отступы</option>
+                                    <option value="paths">Пути файлов</option>
+                                    <option value="markdown">Markdown список</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" id="showFileSizes" class="w-4 h-4 text-blue-600 rounded">
+                            <label for="showFileSizes" class="text-sm text-gray-700">Показывать размер файлов</label>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <input type="checkbox" id="showFileCount" class="w-4 h-4 text-blue-600 rounded" checked>
+                            <label for="showFileCount" class="text-sm text-gray-700">Показывать счётчик файлов</label>
+                        </div>
+                        <div class="relative">
+                            <pre id="treeOutput" class="tree-output bg-gray-900 text-green-400 p-4 rounded-lg text-sm overflow-x-auto min-h-[100px] max-h-[300px] overflow-y-auto">Загрузите файлы для генерации дерева...</pre>
+                            <div class="absolute top-2 right-2 flex gap-2">
+                                <button id="copyTreeBtn" class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs">
+                                    📋 Копировать
+                                </button>
+                            </div>
+                            <div id="treeStats" class="text-xs text-gray-500 mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl p-6 shadow-sm">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">⚙️ Настройки шаблона</h2>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Выберите шаблон:</label>
+                        <select id="templateSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="markdown">Markdown (```language)</option>
+                            <option value="xml">XML-теги (&lt;code&gt;)</option>
+                            <option value="brackets">Квадратные скобки [code]</option>
+                            <option value="asterisks">Звёздочки ***</option>
+                            <option value="quotes">Тройные кавычки """</option>
+                            <option value="custom">Свой шаблон</option>
+                        </select>
+                    </div>
+
+                    <div id="customTemplateSection" class="hidden space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Начало блока:</label>
+                            <input type="text" id="customStart" class="w-full p-3 border border-gray-300 rounded-lg font-mono text-sm" placeholder="```{lang}">
+                            <p class="text-xs text-gray-500 mt-1">Используйте {lang} для языка, {filename} для имени файла</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Конец блока:</label>
+                            <input type="text" id="customEnd" class="w-full p-3 border border-gray-300 rounded-lg font-mono text-sm" placeholder="```">
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Формат заголовка файла:</label>
+                        <input type="text" id="headerFormat" class="w-full p-3 border border-gray-300 rounded-lg font-mono text-sm" value="## Файл: {filename}">
+                        <p class="text-xs text-gray-500 mt-1">Используйте {filename} для имени файла, {path} для полного пути</p>
+                    </div>
+
+                    <div class="mt-4 flex items-center gap-3">
+                        <input type="checkbox" id="includeLineNumbers" class="w-5 h-5 text-blue-600 rounded">
+                        <label for="includeLineNumbers" class="text-sm text-gray-700">Добавить нумерацию строк</label>
+                    </div>
+                    
+                    <div class="mt-3 flex items-center gap-3">
+                        <input type="checkbox" id="includeFullPath" class="w-5 h-5 text-blue-600 rounded">
+                        <label for="includeFullPath" class="text-sm text-gray-700">Показывать полный путь файла</label>
+                    </div>
+                    <div class="mt-2 flex items-center gap-3">
+                        <input type="checkbox" id="enableDivider" class="w-5 h-5 text-blue-600 rounded">
+                        <label for="enableDivider" class="text-sm text-gray-700">Добавлять разделитель между файлами</label>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl p-6 shadow-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-800">📋 Загруженные файлы</h2>
+                        <button id="clearAllBtn" class="text-red-500 hover:text-red-700 text-sm font-medium hidden">
+                            🗑️ Очистить все
+                        </button>
+                    </div>
+                    <div id="filesList" class="space-y-4 max-h-[500px] overflow-y-auto">
+                        <p class="text-gray-400 text-center py-8">Файлы пока не загружены</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-white rounded-xl p-6 shadow-sm sticky top-4">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-800">📝 Результат</h2>
+                        <div class="flex gap-2">
+                            <button id="copyBtn" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                📋 Копировать
+                            </button>
+                            <button id="downloadBtn" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                💾 Скачать
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex mb-4 rounded-lg overflow-hidden border border-gray-300">
+                        <button id="rawViewBtn" class="flex-1 px-4 py-2 text-sm font-medium tab-active transition-colors">
+                            📄 Сырой текст
+                        </button>
+                        <button id="previewViewBtn" class="flex-1 px-4 py-2 text-sm font-medium tab-inactive transition-colors">
+                            👁️ Предпросмотр
+                        </button>
+                    </div>
+                    
+                    <div class="relative">
+                        <!-- область просмотра (сырая) -->
+                        <textarea id="outputText" class="w-full h-[550px] p-4 border border-gray-300 rounded-lg font-mono text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Здесь появится результат..." readonly></textarea>
+                        
+                        <!-- предпросмотр (прекомп) -->
+                        <div id="previewOutput" class="hidden w-full h-[550px] p-4 border border-gray-300 rounded-lg overflow-y-auto preview-container bg-white"></div>
+                        
+                        <!-- статистика -->
+                        <div id="statsBar" class="flex justify-between items-center mt-2 text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
+                            <div class="flex gap-4">
+                                <span id="charCount">0 символов</span>
+                                <span id="wordCount">0 слов</span>
+                                <span id="lineCount">0 строк</span>
+                            </div>
+                            <div class="flex gap-4">
+                                <span id="tokenEstimate" title="Примерная оценка токенов (GPT)">~0 токенов</span>
+                                <span id="fileCountStat">0 файлов</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg hidden z-50">
+        Скопировано в буфер обмена!
+    </div>
+
+    <script>
+        // Сопоставление форматов
+        const LANG_MAP = {
+            'js': 'javascript', 'jsx': 'javascript', 'ts': 'typescript', 'tsx': 'typescript',
+            'py': 'python', 'rb': 'ruby', 'java': 'java', 'cpp': 'cpp', 'c': 'c', 'h': 'c',
+            'hpp': 'cpp', 'cs': 'csharp', 'go': 'go', 'rs': 'rust', 'php': 'php',
+            'swift': 'swift', 'kt': 'kotlin', 'kts': 'kotlin', 'scala': 'scala',
+            'html': 'html', 'htm': 'html', 'css': 'css', 'scss': 'scss', 'sass': 'sass',
+            'less': 'less', 'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml',
+            'md': 'markdown', 'sql': 'sql', 'sh': 'bash', 'bash': 'bash', 'zsh': 'zsh',
+            'ps1': 'powershell', 'vue': 'vue', 'svelte': 'svelte', 'lua': 'lua', 'r': 'r',
+            'dart': 'dart', 'ex': 'elixir', 'exs': 'elixir', 'erl': 'erlang', 'hs': 'haskell',
+            'ml': 'ocaml', 'fs': 'fsharp', 'clj': 'clojure', 'lisp': 'lisp', 'pl': 'perl',
+            'groovy': 'groovy', 'gradle': 'gradle', 'tf': 'terraform', 'dockerfile': 'dockerfile',
+            'makefile': 'makefile', 'cmake': 'cmake', 'toml': 'toml', 'ini': 'ini',
+            'cfg': 'ini', 'conf': 'conf', 'env': 'env', 'txt': 'text', 'log': 'log'
+        };
+
+        const TEMPLATES = {
+            markdown: { start: '```{lang}', end: '```' },
+            xml: { start: '<code language="{lang}" file="{filename}">', end: '</code>' },
+            brackets: { start: '[CODE: {filename} ({lang})]', end: '[/CODE]' },
+            asterisks: { start: '*** {filename} ({lang}) ***', end: '***' },
+            quotes: { start: '""" {filename} ({lang})', end: '"""' }
+        };
+
+        let files = [];
+        let currentView = 'raw';
+        
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const folderInput = document.getElementById('folderInput');
+        const filesList = document.getElementById('filesList');
+        const outputText = document.getElementById('outputText');
+        const previewOutput = document.getElementById('previewOutput');
+        const templateSelect = document.getElementById('templateSelect');
+        const customTemplateSection = document.getElementById('customTemplateSection');
+        const customStart = document.getElementById('customStart');
+        const customEnd = document.getElementById('customEnd');
+        const headerFormat = document.getElementById('headerFormat');
+        const includeLineNumbers = document.getElementById('includeLineNumbers');
+        const includeFullPath = document.getElementById('includeFullPath');
+        const copyBtn = document.getElementById('copyBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const toast = document.getElementById('toast');
+        const rawViewBtn = document.getElementById('rawViewBtn');
+        const previewViewBtn = document.getElementById('previewViewBtn');
+        const treeSection = document.getElementById('treeSection');
+        const toggleTreeSection = document.getElementById('toggleTreeSection');
+        const treeDepth = document.getElementById('treeDepth');
+        const treeFormat = document.getElementById('treeFormat');
+        const treeOutput = document.getElementById('treeOutput');
+        const copyTreeBtn = document.getElementById('copyTreeBtn');
+        const showFileSizes = document.getElementById('showFileSizes');
+        const showFileCount = document.getElementById('showFileCount');
+        const treeStats = document.getElementById('treeStats');
+
+        toggleTreeSection.addEventListener('click', () => {
+            treeSection.classList.toggle('hidden');
+            toggleTreeSection.textContent = treeSection.classList.contains('hidden') ? 'Развернуть ▼' : 'Свернуть ▲';
+        });
+
+        rawViewBtn.addEventListener('click', () => {
+            currentView = 'raw';
+            rawViewBtn.classList.remove('tab-inactive');
+            rawViewBtn.classList.add('tab-active');
+            previewViewBtn.classList.remove('tab-active');
+            previewViewBtn.classList.add('tab-inactive');
+            outputText.classList.remove('hidden');
+            previewOutput.classList.add('hidden');
+        });
+
+        previewViewBtn.addEventListener('click', () => {
+            currentView = 'preview';
+            previewViewBtn.classList.remove('tab-inactive');
+            previewViewBtn.classList.add('tab-active');
+            rawViewBtn.classList.remove('tab-active');
+            rawViewBtn.classList.add('tab-inactive');
+            previewOutput.classList.remove('hidden');
+            outputText.classList.add('hidden');
+            generatePreview();
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            
+            const items = e.dataTransfer.items;
+            if (items) {
+                const filePromises = [];
+                for (const item of items) {
+                    if (item.kind === 'file') {
+                        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+                        if (entry) {
+                            filePromises.push(traverseEntry(entry, ''));
+                        } else {
+                            const file = item.getAsFile();
+                            if (file) filePromises.push(Promise.resolve([{ file, path: file.name }]));
+                        }
+                    }
+                }
+                const allFiles = (await Promise.all(filePromises)).flat();
+                await processFiles(allFiles);
+            }
+        });
+
+        async function traverseEntry(entry, path) {
+            if (entry.isFile) {
+                return new Promise((resolve) => {
+                    entry.file((file) => {
+                        resolve([{ file, path: path + file.name }]);
+                    });
+                });
+            } else if (entry.isDirectory) {
+                const dirReader = entry.createReader();
+                const entries = await new Promise((resolve) => {
+                    dirReader.readEntries(resolve);
+                });
+                const results = [];
+                for (const childEntry of entries) {
+                    const childResults = await traverseEntry(childEntry, path + entry.name + '/');
+                    results.push(...childResults);
+                }
+                return results;
+            }
+            return [];
+        }
+
+        dropZone.addEventListener('click', (e) => {
+            if (e.target.tagName !== 'INPUT') {
+                fileInput.click();
+            }
+        });
+
+        fileInput.addEventListener('change', async (e) => {
+            const fileList = Array.from(e.target.files).map(f => ({ file: f, path: f.name }));
+            await processFiles(fileList);
+            fileInput.value = '';
+        });
+
+        folderInput.addEventListener('change', async (e) => {
+            const fileList = Array.from(e.target.files).map(f => ({
+                file: f,
+                path: f.webkitRelativePath || f.name
+            }));
+            await processFiles(fileList);
+            folderInput.value = '';
+        });
+
+        async function processFiles(fileList) {
+            for (const { file, path } of fileList) {
+                if (await isBinaryFile(file)) {
+                    console.log(`Skipping binary file: ${path}`);
+                    continue;
+                }
+                
+                const content = await readFileContent(file);
+                const ext = file.name.split('.').pop().toLowerCase();
+                const lang = LANG_MAP[ext] || detectSpecialFile(file.name) || 'text';
+                
+                files.push({
+                    id: Date.now() + Math.random(),
+                    name: file.name,
+                    path: path,
+                    content: content,
+                    language: lang,
+                    comment: '',
+                    size: file.size
+                });
+            }
+            
+            renderFilesList();
+            generateOutput();
+            generateTree();
+        }
+
+        function detectSpecialFile(filename) {
+            const lower = filename.toLowerCase();
+            if (lower === 'dockerfile') return 'dockerfile';
+            if (lower === 'makefile') return 'makefile';
+            if (lower.startsWith('.env')) return 'env';
+            if (lower === '.gitignore') return 'gitignore';
+            return null;
+        }
+
+        async function isBinaryFile(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const arr = new Uint8Array(e.target.result);
+                    for (let i = 0; i < Math.min(arr.length, 8000); i++) {
+                        if (arr[i] === 0) {
+                            resolve(true);
+                            return;
+                        }
+                    }
+                    resolve(false);
+                };
+                reader.onerror = () => resolve(true);
+                reader.readAsArrayBuffer(file.slice(0, 8000));
+            });
+        }
+
+        function readFileContent(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = reject;
+                reader.readAsText(file);
+            });
+        }
+
+        // Tree generation
+        function generateTree() {
+            if (files.length === 0) {
+                treeOutput.textContent = 'Загрузите файлы для генерации дерева...';
+                treeStats.textContent = '';
+                return;
+            }
+
+            const maxDepth = parseInt(treeDepth.value) || 5;
+            const format = treeFormat.value;
+            const withSizes = showFileSizes.checked;
+            
+            // строим деревце
+            const tree = {};
+            let totalSize = 0;
+            let fileCount = 0;
+            let folderCount = 0;
+            
+            files.forEach(file => {
+                const parts = file.path.split('/');
+                let current = tree;
+                
+                parts.forEach((part, index) => {
+                    if (index === parts.length - 1) {
+                        current[part] = { _isFile: true, _size: file.size };
+                        totalSize += file.size;
+                        fileCount++;
+                    } else {
+                        if (!current[part]) {
+                            current[part] = { _isFolder: true };
+                            folderCount++;
+                        }
+                        current = current[part];
+                    }
+                });
+            });
+
+            const treeText = renderTree(tree, format, maxDepth, withSizes);
+            treeOutput.textContent = treeText;
+            
+            if (showFileCount.checked) {
+                treeStats.textContent = `📁 ${folderCount} папок, 📄 ${fileCount} файлов, 💾 ${formatSize(totalSize)}`;
+            } else {
+                treeStats.textContent = '';
+            }
+        }
+
+        function renderTree(tree, format, maxDepth, withSizes, prefix = '', depth = 0) {
+            if (depth >= maxDepth) return prefix + '...\n';
+            
+            const entries = Object.entries(tree).filter(([key]) => !key.startsWith('_'));
+            entries.sort((a, b) => {
+                const aIsFolder = a[1]._isFolder;
+                const bIsFolder = b[1]._isFolder;
+                if (aIsFolder && !bIsFolder) return -1;
+                if (!aIsFolder && bIsFolder) return 1;
+                return a[0].localeCompare(b[0]);
+            });
+
+            let result = '';
+            
+            entries.forEach(([name, value], index) => {
+                const isLast = index === entries.length - 1;
+                const isFile = value._isFile;
+                const sizeStr = withSizes && isFile ? ` (${formatSize(value._size)})` : '';
+                
+                switch (format) {
+                    case 'ascii':
+                        result += prefix + (isLast ? '└── ' : '├── ') + name + sizeStr + '\n';
+                        if (!isFile) {
+                            result += renderTree(value, format, maxDepth, withSizes, prefix + (isLast ? '    ' : '│   '), depth + 1);
+                        }
+                        break;
+                    case 'unicode':
+                        result += prefix + (isLast ? '┗━━ ' : '┣━━ ') + name + sizeStr + '\n';
+                        if (!isFile) {
+                            result += renderTree(value, format, maxDepth, withSizes, prefix + (isLast ? '    ' : '┃   '), depth + 1);
+                        }
+                        break;
+                    case 'indent':
+                        result += '  '.repeat(depth) + (isFile ? '📄 ' : '📁 ') + name + sizeStr + '\n';
+                        if (!isFile) {
+                            result += renderTree(value, format, maxDepth, withSizes, '', depth + 1);
+                        }
+                        break;
+                    case 'paths':
+                        if (isFile) {
+                            result += prefix + name + sizeStr + '\n';
+                        } else {
+                            result += renderTree(value, format, maxDepth, withSizes, prefix + name + '/', depth + 1);
+                        }
+                        break;
+                    case 'markdown':
+                        result += '  '.repeat(depth) + '- ' + (isFile ? '' : '**') + name + (isFile ? '' : '/**') + sizeStr + '\n';
+                        if (!isFile) {
+                            result += renderTree(value, format, maxDepth, withSizes, '', depth + 1);
+                        }
+                        break;
+                }
+            });
+            
+            return result;
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        treeDepth.addEventListener('input', generateTree);
+        treeFormat.addEventListener('change', generateTree);
+        showFileSizes.addEventListener('change', generateTree);
+        showFileCount.addEventListener('change', generateTree);
+
+        copyTreeBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(treeOutput.textContent);
+                showToast('🌳 Дерево скопировано!');
+            } catch (err) {
+                showToast('❌ Ошибка копирования');
+            }
+        });
+
+        function renderFilesList() {
+            if (files.length === 0) {
+                filesList.innerHTML = '<p class="text-gray-400 text-center py-8">Файлы пока не загружены</p>';
+                clearAllBtn.classList.add('hidden');
+                copyBtn.disabled = true;
+                downloadBtn.disabled = true;
+                return;
+            }
+
+            clearAllBtn.classList.remove('hidden');
+            copyBtn.disabled = false;
+            downloadBtn.disabled = false;
+
+            filesList.innerHTML = files.map((file, index) => `
+                <div class="file-card border border-gray-200 rounded-lg p-4 bg-gray-50" data-id="${file.id}">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                            <span class="text-2xl flex-shrink-0">${getFileIcon(file.language)}</span>
+                            <div class="min-w-0">
+                                <h3 class="font-medium text-gray-800 truncate" title="${escapeHtml(file.path)}">${escapeHtml(file.name)}</h3>
+                                <span class="text-xs text-gray-500">${file.content.split('\n').length} строк, ${formatSize(file.size)}</span>
+                                ${file.path !== file.name ? `<p class="text-xs text-gray-400 truncate" title="${escapeHtml(file.path)}">${escapeHtml(file.path)}</p>` : ''}
+                            </div>
+                        </div>
+                        <div class="flex gap-1 flex-shrink-0">
+                            <button onclick="moveFile(${index}, -1)" class="p-1 text-gray-400 hover:text-blue-500 ${index === 0 ? 'opacity-30 cursor-not-allowed' : ''}" ${index === 0 ? 'disabled' : ''}>⬆️</button>
+                            <button onclick="moveFile(${index}, 1)" class="p-1 text-gray-400 hover:text-blue-500 ${index === files.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}" ${index === files.length - 1 ? 'disabled' : ''}>⬇️</button>
+                            <button onclick="removeFile('${file.id}')" class="p-1 text-gray-400 hover:text-red-500">❌</button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Язык:</label>
+                            <select onchange="updateFileLanguage('${file.id}', this.value)" class="w-full p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                                ${generateLanguageOptions(file.language)}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Комментарий:</label>
+                            <input type="text" value="${escapeHtml(file.comment)}" onchange="updateFileComment('${file.id}', this.value)" placeholder="Описание..." class="w-full p-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getFileIcon(lang) {
+            const icons = {
+                javascript: '🟨', typescript: '🔷', python: '🐍', java: '☕',
+                html: '🌐', css: '🎨', json: '📋', markdown: '📝', sql: '🗃️',
+                bash: '💻', rust: '🦀', go: '🔵', ruby: '💎', php: '🐘',
+                swift: '🍎', kotlin: '🟣', vue: '💚', react: '⚛️'
+            };
+            return icons[lang] || '📄';
+        }
+
+        function generateLanguageOptions(selectedLang) {
+            const langs = [...new Set(Object.values(LANG_MAP))].sort();
+            return langs.map(lang => 
+                `<option value="${lang}" ${lang === selectedLang ? 'selected' : ''}>${lang}</option>`
+            ).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // File operations
+        window.removeFile = function(id) {
+            files = files.filter(f => f.id != id);
+            renderFilesList();
+            generateOutput();
+            generateTree();
+        };
+
+        window.moveFile = function(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= files.length) return;
+            [files[index], files[newIndex]] = [files[newIndex], files[index]];
+            renderFilesList();
+            generateOutput();
+        };
+
+        window.updateFileLanguage = function(id, lang) {
+            const file = files.find(f => f.id == id);
+            if (file) {
+                file.language = lang;
+                generateOutput();
+            }
+        };
+
+        window.updateFileComment = function(id, comment) {
+            const file = files.find(f => f.id == id);
+            if (file) {
+                file.comment = comment;
+                generateOutput();
+            }
+        };
+
+        // Template handling
+        templateSelect.addEventListener('change', () => {
+            if (templateSelect.value === 'custom') {
+                customTemplateSection.classList.remove('hidden');
+            } else {
+                customTemplateSection.classList.add('hidden');
+            }
+            generateOutput();
+        });
+
+        customStart.addEventListener('input', generateOutput);
+        customEnd.addEventListener('input', generateOutput);
+        headerFormat.addEventListener('input', generateOutput);
+        includeLineNumbers.addEventListener('change', generateOutput);
+        includeFullPath.addEventListener('change', generateOutput);
+        enableDivider.addEventListener('change', generateOutput)
+
+        // Generate output
+        function generateOutput() {
+            if (files.length === 0) {
+                outputText.value = '';
+                updateStats('');
+                return;
+            }
+
+            const template = getTemplate();
+            const header = headerFormat.value;
+            const addLineNumbers = includeLineNumbers.checked;
+            const useFullPath = includeFullPath.checked;
+
+            let output = files.map(file => {
+                let result = '';
+                const displayName = useFullPath ? file.path : file.name;
+                
+                if (header.trim()) {
+                    result += header.replace('{filename}', displayName).replace('{path}', file.path) + '\n\n';
+                }
+                
+                if (file.comment.trim()) {
+                    result += file.comment + '\n\n';
+                }
+                
+                result += template.start
+                    .replace('{lang}', file.language)
+                    .replace('{filename}', displayName) + '\n';
+                
+                let content = file.content;
+                if (addLineNumbers) {
+                    content = content.split('\n').map((line, i) => 
+                        `${String(i + 1).padStart(4, ' ')} | ${line}`
+                    ).join('\n');
+                }
+                result += content;
+                
+                if (!content.endsWith('\n')) {
+                    result += '\n';
+                }
+                
+                result += template.end;
+                
+                return result;
+            }).join(document.getElementById('enableDivider').checked ? "\n\n---\n\n" : "\n\n" );
+
+            outputText.value = output;
+            updateStats(output);
+            
+            if (currentView === 'preview') {
+                generatePreview();
+            }
+        }
+
+        function updateStats(text) {
+            const chars = text.length;
+            const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+            const lines = text ? text.split('\n').length : 0;
+            const tokens = Math.ceil(chars / 4); // Rough estimate
+            
+            document.getElementById('charCount').textContent = `${chars.toLocaleString()} символов`;
+            document.getElementById('wordCount').textContent = `${words.toLocaleString()} слов`;
+            document.getElementById('lineCount').textContent = `${lines.toLocaleString()} строк`;
+            document.getElementById('tokenEstimate').textContent = `~${tokens.toLocaleString()} токенов`;
+            document.getElementById('fileCountStat').textContent = `${files.length} файлов`;
+        }
+
+        function generatePreview() {
+            if (files.length === 0) {
+                previewOutput.innerHTML = '<p class="text-gray-400 text-center py-8">Загрузите файлы для предпросмотра</p>';
+                return;
+            }
+
+            const template = getTemplate();
+            const header = headerFormat.value;
+            const addLineNumbers = includeLineNumbers.checked;
+            const useFullPath = includeFullPath.checked;
+
+            let html = '';
+            
+            files.forEach((file, index) => {
+                const displayName = useFullPath ? file.path : file.name;
+                
+                html += '<div class="file-block">';
+                
+                // Header
+                if (header.trim()) {
+                    const headerText = header.replace('{filename}', displayName).replace('{path}', file.path);
+                    html += `<div class="file-header">${escapeHtml(headerText)}</div>`;
+                }
+                
+                // Comment
+                if (file.comment.trim()) {
+                    html += `<div class="file-comment">💬 ${escapeHtml(file.comment)}</div>`;
+                }
+                
+                // Code wrapper start
+                const wrapperStart = template.start
+                    .replace('{lang}', file.language)
+                    .replace('{filename}', displayName);
+                html += `<div class="code-wrapper">▶ ${escapeHtml(wrapperStart)}</div>`;
+                
+                // Code content
+                let content = file.content;
+                if (addLineNumbers) {
+                    content = content.split('\n').map((line, i) => 
+                        `${String(i + 1).padStart(4, ' ')} | ${line}`
+                    ).join('\n');
+                }
+                html += `<pre class="code-block"><code>${escapeHtml(content)}</code></pre>`;
+                
+                // Code wrapper end
+                html += `<div class="code-wrapper">◀ ${escapeHtml(template.end)}</div>`;
+                
+                html += '</div>';
+                
+                // Separator
+                if (index < files.length - 1) {
+                    html += '<div class="separator">─────────── ✂ ───────────</div>';
+                }
+            });
+
+            previewOutput.innerHTML = html;
+        }
+
+        function getTemplate() {
+            if (templateSelect.value === 'custom') {
+                return {
+                    start: customStart.value || '```{lang}',
+                    end: customEnd.value || '```'
+                };
+            }
+            return TEMPLATES[templateSelect.value];
+        }
+
+        // Copy and download
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(outputText.value);
+                showToast('📋 Скопировано в буфер обмена!');
+            } catch (err) {
+                outputText.select();
+                document.execCommand('copy');
+                showToast('📋 Скопировано!');
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            const blob = new Blob([outputText.value], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'prompt-code.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('💾 Файл скачан!');
+        });
+
+        clearAllBtn.addEventListener('click', () => {
+            if (confirm('Очистить все загруженные файлы?')) {
+                files = [];
+                renderFilesList();
+                generateOutput();
+                generateTree();
+            }
+        });
+
+        function showToast(message) {
+            toast.textContent = message;
+            toast.classList.remove('hidden');
+            toast.classList.add('copy-toast');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+                toast.classList.remove('copy-toast');
+            }, 2000);
+        }
+
+        // Initial state
+        copyBtn.disabled = true;
+        downloadBtn.disabled = true;
+    </script>
+</body>
+</html>
